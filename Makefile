@@ -1,4 +1,4 @@
-PACKAGES ?= mountinfo mount sequential signal symlink user userns # IMPORTANT: when updating this list, also update the conditional one in .github/workflows/test.yml
+PACKAGES ?= capability mountinfo mount sequential signal symlink user userns # IMPORTANT: when updating this list, also update the conditional one in .github/workflows/test.yml
 BINDIR ?= _build/bin
 CROSS ?= linux/arm linux/arm64 linux/ppc64le linux/s390x \
 	freebsd/amd64 openbsd/amd64 darwin/amd64 darwin/arm64 windows/amd64
@@ -12,19 +12,21 @@ all: clean lint test cross
 clean:
 	$(RM) mount/go-local.*
 
-.PHONY: test
-test: test-local
+.PHONY: foreach
+foreach: ## Run $(CMD) for every package.
+	@if test -z '$(CMD)'; then \
+		echo 'Usage: make foreach CMD="commands to run for every package"'; \
+		exit 1; \
+	fi
 	set -eu; \
 	for p in $(PACKAGES); do \
-		(cd $$p; go test $(RUN_VIA_SUDO) -v .); \
+		(cd $$p; $(CMD);) \
 	done
 
-.PHONY: tidy
-tidy:
-	set -eu; \
-	for p in $(PACKAGES); do \
-		(cd $$p; go mod tidy); \
-	done
+.PHONY: test
+test: test-local
+test: CMD=go test $(RUN_VIA_SUDO) -v .
+test: foreach
 
 # Test the mount module against the local mountinfo source code instead of the
 # release specified in its go.mod. This allows catching regressions / breaking
@@ -39,16 +41,13 @@ test-local:
 
 .PHONY: lint
 lint: $(BINDIR)/golangci-lint
+lint: CMD=go mod download; ../$(BINDIR)/golangci-lint run
+lint: foreach
+lint:
 	$(BINDIR)/golangci-lint version
-	set -eu; \
-	for p in $(PACKAGES); do \
-		(cd $$p; \
-		go mod download; \
-		../$(BINDIR)/golangci-lint run); \
-	done
 
 $(BINDIR)/golangci-lint: $(BINDIR)
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(BINDIR) v1.59.1
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(BINDIR) v1.60.1
 
 $(BINDIR):
 	mkdir -p $(BINDIR)

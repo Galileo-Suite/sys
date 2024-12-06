@@ -4,24 +4,36 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.18.x, 1.21.x, 1.22.x]
-        platform: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, windows-latest, macos-12, macos-14]
+        go-version: [1.18.x, 1.22.x, 1.23.x]
+        platform: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, windows-latest, macos-13, macos-14]
     runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        shell: bash
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
     - name: Install Go
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - if: ${{ matrix.go-version == '1.18.x' }}
+        # Disable caching as we don't have top-level go.sum needed for
+        # the cache key, and specifying multiple go.sums is not trivial
+        # (see https://github.com/moby/sys/pull/160 for details).
+        cache: false
+    - name: Set PACKAGES env
+      if: ${{ matrix.go-version == '1.18.x' }}
       run: |
         # This corresponds with the list in Makefile:1, but omits the "userns"
-        # module, which requires go1.21 as minimum.
-        echo 'PACKAGES="mountinfo mount sequential signal symlink user"' >> $GITHUB_ENV
+        # and "capability" modules, which require go1.21 as minimum.
+        echo 'PACKAGES=mountinfo mount sequential signal symlink user' >> $GITHUB_ENV
     - name: go mod tidy
       run: |
-        make tidy
+        make foreach CMD="go mod tidy"
+        git diff --exit-code
+    - name: go fix
+      run: |
+        make foreach CMD="go fix"
         git diff --exit-code
     - name: Lint
       run: make lint
@@ -33,3 +45,9 @@ jobs:
         uname -a
         make test
 
+  codespell:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - run: pip install --break-system-packages codespell==v2.3.0
+    - run: codespell
